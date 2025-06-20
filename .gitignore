@@ -1,0 +1,29 @@
+# Chrome Extension generated files
+*.crx
+*.pem
+
+# Development files
+.DS_Store
+.vscode/
+.idea/
+
+# Node.js (if added later)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Logs
+logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Archive files
+*.zip
+*.tar.gz
+
+# OS generated files
+Thumbs.db
