@@ -41,9 +41,17 @@ document.addEventListener('DOMContentLoaded', function() {
       });
 
       if (results && results.success) {
-        showStatus('AIダミーデータを生成して入力しました');
+        const message = results.fallback 
+          ? `フォールバック機能で${results.filledFields}個のフィールドに入力しました`
+          : `AI生成データで${results.filledFields}個のフィールドに入力しました`;
+        showStatus(message);
+        
+        // オブジェクト名も表示
+        if (results.objectName && results.objectName !== 'Unknown') {
+          console.log(`Object: ${results.objectName}, Total: ${results.totalFields}, Filled: ${results.filledFields}, Skipped: ${results.skippedFields}`);
+        }
       } else {
-        showStatus(results.error || 'フォームの解析に失敗しました', 'error');
+        showStatus(results?.error || 'フォームの解析に失敗しました', 'error');
       }
 
     } catch (error) {
