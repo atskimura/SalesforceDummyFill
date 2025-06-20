@@ -152,8 +152,8 @@ class SalesforceDummyFill {
 
     const rect = field.getBoundingClientRect();
     this.fillIcon.style.display = 'block';
-    this.fillIcon.style.left = (rect.right - 30) + 'px';
-    this.fillIcon.style.top = (rect.top + (rect.height / 2) - 10) + 'px';
+    this.fillIcon.style.left = (rect.right + 10) + 'px';
+    this.fillIcon.style.top = (rect.top + (rect.height / 2) - 12) + 'px';
     this.isIconVisible = true;
   }
 
@@ -168,30 +168,35 @@ class SalesforceDummyFill {
   createFillIcon() {
     this.fillIcon = document.createElement('div');
     this.fillIcon.id = 'salesforce-dummy-fill-icon';
-    this.fillIcon.innerHTML = '🔧';
+    
+    // Use high-resolution PNG icon
+    const iconURL = chrome.runtime.getURL('icons/icon48.png');
     this.fillIcon.style.cssText = `
       position: fixed;
-      width: 20px;
-      height: 20px;
-      background: #0176d3;
-      color: white;
-      border-radius: 3px;
+      width: 24px;
+      height: 24px;
+      background-image: url('${iconURL}');
+      background-size: contain;
+      background-repeat: no-repeat;
+      border-radius: 4px;
       display: none;
       cursor: pointer;
       z-index: 10000;
-      font-size: 12px;
-      text-align: center;
-      line-height: 20px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      transition: box-shadow 0.2s ease, opacity 0.2s ease;
     `;
 
     this.fillIcon.addEventListener('click', this.showDropdown.bind(this));
     
     this.fillIcon.addEventListener('mouseenter', () => {
       this.isIconVisible = true;
+      this.fillIcon.style.boxShadow = '0 4px 12px rgba(0,0,0,0.35)';
+      this.fillIcon.style.opacity = '0.9';
     });
 
     this.fillIcon.addEventListener('mouseleave', () => {
+      this.fillIcon.style.boxShadow = '0 2px 8px rgba(0,0,0,0.25)';
+      this.fillIcon.style.opacity = '1';
       setTimeout(() => {
         if (!this.dropdown || this.dropdown.style.display === 'none') {
           this.isIconVisible = false;
@@ -292,7 +297,7 @@ if (document.readyState === 'loading') {
 }
 
 // Handle messages from popup
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   if (request.action === 'fillDummyData') {
     console.log('Received fillDummyData message');
     sendResponse({ success: true });
