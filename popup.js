@@ -12,10 +12,20 @@ document.addEventListener('DOMContentLoaded', function() {
     }, 3000);
   }
 
+  // ページ読み込み時にAPIキーをチェック
+  checkApiKeyOnLoad();
+
   fillButton.addEventListener('click', async function() {
     try {
       fillButton.disabled = true;
       fillButton.textContent = 'AI生成中...';
+
+      // APIキーをチェック
+      const apiKey = await checkOpenAIKey();
+      if (!apiKey) {
+        showSettingsMessage();
+        return;
+      }
 
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       
@@ -26,7 +36,6 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
       }
 
-      // TODO: OpenAI API統合後にcontent scriptと連携
       const results = await chrome.tabs.sendMessage(tab.id, { 
         action: 'fillDummyData' 
       });
@@ -34,27 +43,69 @@ document.addEventListener('DOMContentLoaded', function() {
       if (results && results.success) {
         showStatus('AIダミーデータを生成して入力しました');
       } else {
-        showStatus('フォームの解析に失敗しました', 'error');
+        showStatus(results.error || 'フォームの解析に失敗しました', 'error');
       }
 
     } catch (error) {
       console.error('Error:', error);
-      showStatus('エラーが発生しました', 'error');
+      if (error.message && error.message.includes('OpenAI')) {
+        showStatus(error.message, 'error');
+      } else {
+        showStatus('エラーが発生しました', 'error');
+      }
     } finally {
       fillButton.disabled = false;
       fillButton.textContent = 'AIダミーデータ生成';
     }
   });
 
-  // TODO: OpenAI API設定チェック機能
   async function checkOpenAIKey() {
     const result = await chrome.storage.sync.get(['openaiApiKey']);
     return result.openaiApiKey;
   }
 
-  // TODO: 設定画面への誘導
+  async function checkApiKeyOnLoad() {
+    const apiKey = await checkOpenAIKey();
+    if (!apiKey) {
+      fillButton.disabled = true;
+      fillButton.textContent = 'API設定が必要';
+      fillButton.style.backgroundColor = '#f39c12';
+      fillButton.title = 'OpenAI APIキーを設定してください';
+      
+      // 設定画面へのリンクを表示
+      showSettingsLink();
+    }
+  }
+
   function showSettingsMessage() {
-    showStatus('OpenAI APIキーを設定してください', 'error');
-    // 設定画面を開くリンクを表示
+    showStatus('設定画面でOpenAI APIキーを設定してください', 'error');
+    showSettingsLink();
+  }
+
+  function showSettingsLink() {
+    // 既存のリンクがあれば削除
+    const existingLink = document.getElementById('settingsLink');
+    if (existingLink) {
+      existingLink.remove();
+    }
+
+    // 設定画面へのリンクを追加
+    const settingsLink = document.createElement('div');
+    settingsLink.id = 'settingsLink';
+    settingsLink.innerHTML = `
+      <div style="margin-top: 10px; padding: 10px; background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; text-align: center;">
+        <a href="#" id="openSettings" style="color: #e67e22; text-decoration: none; font-weight: bold;">
+          ⚙️ 設定画面を開く
+        </a>
+      </div>
+    `;
+    
+    document.querySelector('.header').appendChild(settingsLink);
+    
+    // 設定画面を開くイベントリスナー
+    document.getElementById('openSettings').addEventListener('click', function(e) {
+      e.preventDefault();
+      chrome.runtime.openOptionsPage();
+    });
   }
 });
