@@ -122,9 +122,13 @@ class SalesforceDummyFill {
         }
 
         if (value !== null && value !== undefined) {
-          this.setFieldValue(field, value);
-          filledCount++;
-          console.log(`✅ Filled ${field.label || field.apiName}: ${value}`);
+          const success = this.setFieldValue(field, value);
+          if (success) {
+            filledCount++;
+            console.log(`✅ Filled ${field.label || field.apiName}: ${value}`);
+          } else {
+            skippedCount++;
+          }
         } else {
           skippedCount++;
           console.log(`⏭️ Skipped ${field.label || field.apiName}: No matching data`);
@@ -139,9 +143,23 @@ class SalesforceDummyFill {
     return { filledCount, skippedCount };
   }
 
+  // Lookupフィールド（参照項目）かどうかを判定
+  isLookupField(field) {
+    const element = field.element;
+    return field.type === 'lookup' || 
+           (element.getAttribute('aria-autocomplete') === 'list' && 
+            element.getAttribute('role') === 'combobox');
+  }
+
   // フィールドタイプに応じた値設定
   setFieldValue(field, value) {
     const element = field.element;
+    
+    // Lookupフィールド（参照項目）はスキップ
+    if (this.isLookupField(field)) {
+      console.log(`⏭️ Skipped lookup field: ${field.label || field.apiName}`);
+      return false; // スキップしたことを示す
+    }
     
     switch (field.type) {
       case 'checkbox':
@@ -153,12 +171,6 @@ class SalesforceDummyFill {
         this.setPicklistValue(element, value);
         break;
         
-      case 'lookup':
-        // Lookupの場合は、検索フィールドに値を入力
-        element.value = value;
-        this.triggerLookupSearch(element, value);
-        break;
-        
       default:
         // 通常のテキスト入力
         element.value = value;
@@ -167,6 +179,7 @@ class SalesforceDummyFill {
 
     // イベントをトリガー（Salesforceのリアクティブ更新用）
     this.triggerFieldEvents(element);
+    return true; // 成功を示す
   }
 
   // Picklistの値設定
