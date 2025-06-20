@@ -15,11 +15,13 @@ SalesforceのLightning Web Componentフォームに、OpenAI APIを活用して�
 - ワンクリックで全フィールドにスマートなダミーデータを一括入力
 
 ### 対応フィールドタイプ
-- テキスト入力、数値、日付、チェックボックス
+- テキスト入力、数値、メール、電話、URL、パスワード
+- チェックボックス
 - ピックリスト（lightning-combobox）
-- ルックアップ（lightning-lookup）
 - 住所フィールド（lightning-input-address）
+  - 請求先・納入先の各コンポーネント（国、都道府県、市区町村、郵便番号、住所）を個別処理
 - テキストエリア
+- ルックアップ（参照項目）- 自動的にスキップ
 
 ### 設定機能
 - OpenAI APIキーの設定
@@ -69,17 +71,21 @@ SalesforceのLightning Web Componentフォームに、OpenAI APIを活用して�
 - ✅ .gitignoreファイル作成
 - ✅ OpenAI API統合アーキテクチャ設計と実装
 - ✅ Salesforceフォーム解析機能の実装 (salesforce-analyzer.js)
+  - data-target-selection-nameベースの堅牢なフィールド検出
   - 11種類のフィールドタイプをサポート
+  - 住所フィールドの複数コンポーネント対応（二重識別子方式）
   - オブジェクト名の自動抽出
-  - フィールド情報の詳細解析
 - ✅ OpenAI APIダミーデータ生成機能 (openai-helper.js)
   - コンテキスト理解に基づくデータ生成
+  - フラットなJSON出力でネストオブジェクト問題を回避
   - エラーハンドリングとフォールバック機能
 - ✅ 設定画面の実装 (options.html/js)
   - OpenAI APIキー設定
   - 接続テスト機能
 - ✅ 一括フィールド入力機能
   - Lightning Web Component対応
+  - 複合フィールド（住所）の個別コンポーネント処理
+  - Lookupフィールド（参照項目）の自動スキップ
   - フィールドタイプ別の値設定
   - イベント処理とリアクティブ更新
 
