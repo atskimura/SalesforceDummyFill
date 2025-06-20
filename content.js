@@ -96,7 +96,17 @@ class SalesforceDummyFill {
 
         // API名でデータを検索
         let value = null;
-        if (field.apiName && dummyData[field.apiName]) {
+        
+        // 複合フィールドの場合
+        if (field.subField) {
+          const compositeKey = `${field.apiName}.${field.subField}`;
+          if (dummyData[compositeKey]) {
+            value = dummyData[compositeKey];
+          }
+        }
+        
+        // 通常のフィールドの場合
+        if (!value && field.apiName && dummyData[field.apiName]) {
           value = dummyData[field.apiName];
         }
 

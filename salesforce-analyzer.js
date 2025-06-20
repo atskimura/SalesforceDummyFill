@@ -1,37 +1,22 @@
 // Salesforce Lightning Web Component フォーム解析クラス
 class SalesforceAnalyzer {
   constructor() {
-    this.fieldSelectors = {
-      // Lightning Input Components
-      textInput: 'lightning-input input.slds-input[type="text"]:not([inputmode="decimal"])',
-      numberInput: 'lightning-input input.slds-input[inputmode="decimal"]',
-      emailInput: 'lightning-input input.slds-input[type="email"]',
-      telInput: 'lightning-input input.slds-input[type="tel"]',
-      urlInput: 'lightning-input input.slds-input[type="url"]',
-      passwordInput: 'lightning-input input.slds-input[type="password"]',
-      
-      // Text Area
-      textarea: 'lightning-textarea textarea.slds-textarea',
-      
-      // Checkbox
-      checkbox: 'lightning-input input[type="checkbox"]',
-      
-      // Picklist/Combobox
-      picklist: 'lightning-combobox button[role="combobox"]',
-      
-      // Lookup fields
-      lookup: 'lightning-lookup input[role="combobox"]',
-      
-      // Date fields
-      datePicker: 'lightning-datepicker input.slds-input[type="text"]',
-      
-      // Address components
-      addressCountry: 'lightning-input-address lightning-input[data-field="country"] input',
-      addressState: 'lightning-input-address lightning-input[data-field="province"] input', 
-      addressCity: 'lightning-input-address lightning-input[data-field="city"] input',
-      addressPostal: 'lightning-input-address lightning-input[data-field="postalCode"] input',
-      addressStreet: 'lightning-input-address lightning-textarea[data-field="street"] textarea'
-    };
+    // data-target-selection-nameベースのアプローチに変更
+    this.fieldContainerSelector = '[data-target-selection-name^="sfdc:RecordField."]';
+    
+    // 各コンテナ内で検索する入力要素のセレクター
+    this.inputSelectors = [
+      'input[type="text"]',
+      'input[type="email"]', 
+      'input[type="tel"]',
+      'input[type="url"]',
+      'input[type="password"]',
+      'input[type="number"]',
+      'input[type="checkbox"]',
+      'textarea',
+      'button[role="combobox"]',  // picklist
+      'input[role="combobox"]'    // lookup
+    ];
   }
 
   // ページのオブジェクト名を抽出
@@ -116,15 +101,22 @@ class SalesforceAnalyzer {
   extractFields() {
     const fields = [];
     
-    // 各フィールドタイプごとに検索
-    Object.entries(this.fieldSelectors).forEach(([fieldType, selector]) => {
-      const elements = document.querySelectorAll(selector);
+    // data-target-selection-nameを持つフィールドコンテナを検索
+    const fieldContainers = document.querySelectorAll(this.fieldContainerSelector);
+    
+    fieldContainers.forEach(container => {
+      const selectionName = container.getAttribute('data-target-selection-name');
       
-      elements.forEach(element => {
-        const fieldInfo = this.extractFieldInfo(element, fieldType);
-        if (fieldInfo && !this.isDuplicateField(fields, fieldInfo)) {
-          fields.push(fieldInfo);
-        }
+      // 各コンテナ内で入力要素を検索
+      this.inputSelectors.forEach(inputSelector => {
+        const elements = container.querySelectorAll(inputSelector);
+        
+        elements.forEach(element => {
+          const fieldInfo = this.extractFieldInfo(element, container, selectionName);
+          if (fieldInfo && !this.isDuplicateField(fields, fieldInfo)) {
+            fields.push(fieldInfo);
+          }
+        });
       });
     });
 
@@ -132,13 +124,16 @@ class SalesforceAnalyzer {
   }
 
   // 個別フィールド情報の抽出
-  extractFieldInfo(element, fieldType) {
+  extractFieldInfo(element, container, selectionName) {
     try {
+      const apiNameInfo = this.getFieldApiName(element, container, selectionName);
+      
       const fieldInfo = {
-        type: fieldType,
+        type: this.getFieldType(element),
         element: element,
-        apiName: this.getFieldApiName(element),
-        label: this.getFieldLabel(element),
+        apiName: apiNameInfo.apiName,
+        subField: apiNameInfo.subField,
+        label: this.getFieldLabel(element, container),
         required: this.isRequired(element),
         disabled: element.disabled || element.readOnly,
         value: this.getCurrentValue(element),
@@ -158,46 +153,49 @@ class SalesforceAnalyzer {
     }
   }
 
-  // フィールドのAPI名を取得
-  getFieldApiName(element) {
-    // name属性から取得
-    if (element.name) {
-      return element.name;
+  // フィールドのAPI名とサブフィールド名を取得
+  getFieldApiName(element, container, selectionName) {
+    // data-target-selection-nameから基本API名を抽出
+    const match = selectionName.match(/sfdc:RecordField\.[^\.]+\.(.+)/);
+    if (!match) {
+      return { apiName: null, subField: null };
     }
-
-    // 親要素から data-target-selection-name を探す
-    let parent = element.closest('[data-target-selection-name]');
-    if (parent) {
-      const selectionName = parent.getAttribute('data-target-selection-name');
-      const match = selectionName.match(/sfdc:RecordField\.[^\.]+\.(.+)/);
-      if (match) {
-        return match[1];
+    
+    const baseApiName = match[1];
+    
+    // 複合フィールド（住所など）の処理
+    if (baseApiName.endsWith('Address')) {
+      const dataField = element.closest('[data-field]')?.getAttribute('data-field');
+      if (dataField) {
+        return {
+          apiName: baseApiName,
+          subField: dataField
+        };
       }
     }
-
-    // lightning-input の親から取得を試行
-    const lightningInput = element.closest('lightning-input, lightning-textarea, lightning-combobox, lightning-lookup');
-    if (lightningInput) {
-      const fieldName = lightningInput.getAttribute('field-name') || 
-                       lightningInput.getAttribute('data-field') ||
-                       lightningInput.getAttribute('name');
-      if (fieldName) {
-        return fieldName;
-      }
-    }
-
-    return null;
+    
+    // 通常のフィールド
+    return {
+      apiName: baseApiName,
+      subField: null
+    };
   }
 
   // フィールドラベルを取得
-  getFieldLabel(element) {
+  getFieldLabel(element, container) {
+    // コンテナのfield-label属性から取得
+    const fieldLabel = container.getAttribute('field-label');
+    if (fieldLabel) {
+      return fieldLabel;
+    }
+
     // aria-label から取得
     if (element.getAttribute('aria-label')) {
       return element.getAttribute('aria-label');
     }
 
-    // 関連するlabelを探す
-    const labelElement = element.closest('.slds-form-element')?.querySelector('.test-id__field-label, label');
+    // コンテナ内のラベル要素を探す
+    const labelElement = container.querySelector('.test-id__field-label, label, legend');
     if (labelElement) {
       return labelElement.textContent.trim().replace(/\s*\*\s*$/, ''); // 必須マーク(*)を削除
     }
@@ -211,13 +209,30 @@ class SalesforceAnalyzer {
       }
     }
 
-    // data-target-selection-name の field-label 属性
-    const fieldContainer = element.closest('[field-label]');
-    if (fieldContainer) {
-      return fieldContainer.getAttribute('field-label');
-    }
-
     return null;
+  }
+
+  // フィールドタイプを判定
+  getFieldType(element) {
+    const tagName = element.tagName.toLowerCase();
+    const type = element.type;
+    const role = element.getAttribute('role');
+
+    if (tagName === 'input') {
+      if (type === 'checkbox') return 'checkbox';
+      if (type === 'email') return 'email';
+      if (type === 'tel') return 'tel';
+      if (type === 'url') return 'url';
+      if (type === 'password') return 'password';
+      if (type === 'number' || element.getAttribute('inputmode') === 'decimal') return 'number';
+      if (role === 'combobox') return 'lookup';
+      return 'text';
+    }
+    
+    if (tagName === 'textarea') return 'textarea';
+    if (tagName === 'button' && role === 'combobox') return 'picklist';
+    
+    return 'unknown';
   }
 
   // 必須フィールドかどうかを判定
@@ -257,10 +272,16 @@ class SalesforceAnalyzer {
 
   // 重複フィールドチェック
   isDuplicateField(existingFields, newField) {
-    return existingFields.some(field => 
-      (field.apiName && field.apiName === newField.apiName) ||
-      (field.label && field.label === newField.label)
-    );
+    return existingFields.some(field => {
+      // 複合フィールドの場合は apiName + subField の組み合わせで判定
+      if (field.subField || newField.subField) {
+        return field.apiName === newField.apiName && field.subField === newField.subField;
+      }
+      
+      // 通常フィールドの場合は従来通り
+      return (field.apiName && field.apiName === newField.apiName) ||
+             (field.label && field.label === newField.label);
+    });
   }
 
   // デバッグ用：フィールド情報をコンソールに出力

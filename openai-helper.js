@@ -65,7 +65,7 @@ class OpenAIHelper {
           messages: [
             {
               role: 'system',
-              content: 'あなたはSalesforceのフォーム入力用ダミーデータを生成するAIアシスタントです。日本語の適切なダミーデータを生成してください。プレーンなJSONのみを返し、マークダウンのコードブロックや説明文は一切含めないでください。'
+              content: 'あなたはSalesforceのフォーム入力用ダミーデータを生成するAIアシスタントです。日本語の適切なダミーデータを生成してください。プレーンなJSONのみを返し、マークダウンのコードブロックや説明文は一切含めないでください。フラットなJSON構造を使用し、ネストしたオブジェクトは絶対に使わないでください。'
             },
             {
               role: 'user',
@@ -102,7 +102,12 @@ class OpenAIHelper {
     const { objectName, fields } = formInfo;
     
     const fieldList = fields.map(field => {
-      return `- ${field.label} (${field.apiName}) - ${field.type}${field.required ? ' [必須]' : ''}`;
+      // 複合フィールドの表示形式
+      const fieldKey = field.subField 
+        ? `${field.apiName}.${field.subField}`
+        : field.apiName;
+      
+      return `- ${field.label} (${fieldKey}) - ${field.type}${field.required ? ' [必須]' : ''}`;
     }).join('\n');
 
     return `
@@ -117,10 +122,12 @@ ${fieldList}
 3. 必須フィールドは必ず値を設定
 4. 実在しそうだが架空のデータ
 
-JSON形式で回答してください:
+**重要**: フラットなJSONで回答してください。ネストしたオブジェクトは使わず、全てのフィールドをトップレベルのキーとして定義してください:
 {
-  "fieldApiName1": "値1",
-  "fieldApiName2": "値2",
+  "Name": "値1",
+  "BillingAddress.country": "値2",
+  "BillingAddress.postalCode": "値3",
+  "ShippingAddress.country": "値4",
   ...
 }
 `.trim();
