@@ -39,7 +39,8 @@ openai-helper.js      # OpenAI API統合
 
 #### `content.js` - メインオーケストレーター
 - `SalesforceDummyFill`クラス：全体の処理フローを管理
-- フォーム解析 → OpenAI API呼び出し → フィールド入力の一連の処理
+- フォーム解析 → OpenAI API呼び出し → 統一フィールド入力の一連の処理
+- ピックリストのランダム選択機能（画面上の選択可能な値から選択）
 - フォールバック機能（API失敗時の基本ダミーデータ）
 - メッセージパッシング（popup.js との通信）
 
@@ -78,16 +79,23 @@ if (baseApiName.endsWith('Address')) {
 ### サポートするフィールドタイプ
 - **テキスト系**: `input[type="text|email|tel|url|password"]`, `textarea`
 - **数値**: `input[type="number"]`, `input[inputmode="decimal"]`
-- **選択系**: `button[role="combobox"]` (picklist), `input[role="combobox"]` (lookup)
+- **選択系**: 
+  - `button[role="combobox"]` (picklist) - 画面の選択可能値からランダム選択
+  - `input[role="combobox"]` (lookup) - 自動スキップ
 - **チェックボックス**: `input[type="checkbox"]`
 - **複合**: `lightning-input-address` (住所の複数コンポーネント)
 
 ## 開発時の重要事項
 
 ### Lightning Web Component との互換性
-- イベントトリガー：`input`, `change`, `blur` イベントをディスパッチしてSalesforceのリアクティブ更新を確保
-- Lookupフィールドは自動的にスキップ（参照項目のため）
-- 住所フィールドは個別コンポーネント（国、都道府県、市区町村、郵便番号、住所）として処理
+- **統一処理アーキテクチャ**: 全フィールドタイプを単一ループで効率的に処理
+- **ピックリスト処理**: 
+  - 「--なし--」状態を空値として適切に処理
+  - ドロップダウン展開 → オプション取得 → ランダム選択 → イベント発火
+  - 最小限のイベント処理（click + change）で Lightning Web Component との互換性確保
+- **イベントトリガー**: `input`, `change`, `blur` イベントをディスパッチしてSalesforceのリアクティブ更新を確保
+- **Lookupフィールド**: 自動的にスキップ（参照項目のため）
+- **住所フィールド**: 個別コンポーネント（国、都道府県、市区町村、郵便番号、住所）として処理
 
 ### OpenAI API プロンプト設計
 - 日本語ビジネスデータ生成に最適化

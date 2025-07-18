@@ -17,7 +17,7 @@ SalesforceのLightning Web Componentフォームに、OpenAI APIを活用して�
 ### 対応フィールドタイプ
 - テキスト入力、数値、メール、電話、URL、パスワード
 - チェックボックス
-- ピックリスト（lightning-combobox）
+- ピックリスト（lightning-combobox）- 画面上の選択可能な値からランダム選択
 - 住所フィールド（lightning-input-address）
   - 請求先・納入先の各コンポーネント（国、都道府県、市区町村、郵便番号、住所）を個別処理
 - テキストエリア
@@ -86,8 +86,10 @@ SalesforceのLightning Web Componentフォームに、OpenAI APIを活用して�
   - Lightning Web Component対応
   - 複合フィールド（住所）の個別コンポーネント処理
   - Lookupフィールド（参照項目）の自動スキップ
+  - ピックリスト（選択リスト）のランダム選択機能
   - フィールドタイプ別の値設定
   - イベント処理とリアクティブ更新
+  - 統一された単一パス処理アーキテクチャ
 
 ## 技術スタック
 
