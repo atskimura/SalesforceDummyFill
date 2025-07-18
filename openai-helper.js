@@ -158,28 +158,4 @@ ${fieldList}
 `.trim();
   }
 
-  // フォールバック用の基本ダミーデータ
-  getFallbackData() {
-    return {
-      fallback: true,
-      data: {
-        Name: '株式会社サンプル',
-        FirstName: '太郎',
-        LastName: '田中',
-        Email: 'test@example.com',
-        Phone: '03-1234-5678',
-        MobilePhone: '090-1234-5678',
-        Title: '営業部長',
-        Department: '営業部',
-        CompanyName: '株式会社テスト',
-        Street: '東京都新宿区1-1-1',
-        City: '新宿区',
-        State: '東京都',
-        PostalCode: '160-0001',
-        Country: '日本',
-        Website: 'https://www.example.com',
-        Description: 'テスト用のダミーデータです。'
-      }
-    };
-  }
 }

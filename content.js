@@ -71,11 +71,7 @@ class SalesforceDummyFill {
     } catch (error) {
       console.error('Generate and fill process failed:', error);
       
-      // OpenAI API失敗時のフォールバック
-      if (error.message.includes('OpenAI') || error.message.includes('API')) {
-        console.log('🔄 Falling back to basic dummy data...');
-        return await this.fallbackFill();
-      }
+      // OpenAI API失敗時はエラーを投げる（フォールバックは削除）
       
       throw error;
     }
@@ -396,27 +392,6 @@ class SalesforceDummyFill {
   }
 
 
-  // フォールバック用の基本入力
-  async fallbackFill() {
-    try {
-      const formInfo = this.analyzeForm();
-      const fallbackData = this.openaiHelper.getFallbackData();
-      const fillResult = await this.fillAllFields(fallbackData.data, formInfo.fields);
-      
-      return {
-        success: true,
-        fallback: true,
-        objectName: formInfo.objectName,
-        totalFields: formInfo.fields.length,
-        filledFields: fillResult.filledCount,
-        skippedFields: fillResult.skippedCount,
-        message: 'フォールバック機能を使用してダミーデータを入力しました'
-      };
-    } catch (error) {
-      console.error('Fallback fill failed:', error);
-      throw new Error('ダミーデータの入力に失敗しました');
-    }
-  }
 }
 
 // Initialize when DOM is ready
