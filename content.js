@@ -55,17 +55,9 @@ class SalesforceDummyFill {
       console.log('🤖 Generating dummy data with OpenAI...');
       const dummyData = await this.openaiHelper.generateDummyData(formInfo);
       
-      // 3. フィールドに一括入力
-      console.log('📝 Filling fields with generated data...');
+      // 3. フィールドに一括入力（ピックリストも含む）
+      console.log('📝 Filling all fields with generated data...');
       const fillResult = await this.fillAllFields(dummyData, formInfo.fields);
-      
-      // 4. ピックリストを直接処理（独立して実行）
-      console.log('🎯 Processing picklists directly...');
-      const picklistResult = await this.fillPicklistsDirectly();
-      
-      // 結果をマージ
-      fillResult.filledFields += picklistResult.filledCount;
-      fillResult.skippedFields += picklistResult.skippedCount;
       
       return {
         success: true,
@@ -98,7 +90,11 @@ class SalesforceDummyFill {
     for (const field of fields) {
       try {
         // 無効・読み取り専用・既に値があるフィールドはスキップ
-        if (field.disabled || (field.value && field.value.trim() !== '')) {
+        // ピックリストの場合は「--なし--」を空値として扱う
+        const hasValue = field.value && field.value.trim() !== '' && 
+                        !(field.type === 'picklist' && field.value === '--なし--');
+        
+        if (field.disabled || hasValue) {
           skippedCount++;
           continue;
         }
@@ -106,10 +102,15 @@ class SalesforceDummyFill {
         // 値を取得（ピックリストの場合は画面から選択）
         let value = null;
         
-        // ピックリストは直接処理するためスキップ
+        // ピックリストの場合は画面から選択可能な値をランダム選択
         if (field.type === 'picklist') {
-          console.log(`⏭️ Skipped picklist ${field.label || field.apiName} (will be processed directly)`);
-          skippedCount++;
+          console.log(`🎯 Processing picklist: ${field.label || field.apiName}`);
+          const success = await this.setPicklistValue(field.element);
+          if (success) {
+            filledCount++;
+          } else {
+            skippedCount++;
+          }
           continue;
         }
         
@@ -186,7 +187,7 @@ class SalesforceDummyFill {
         
       case 'picklist':
         // Picklistの場合は非同期でオプションを選択
-        return await this.setPicklistValue(element, value);
+        return await this.setPicklistValue(element);
         
       default:
         // 通常のテキスト入力
@@ -197,7 +198,7 @@ class SalesforceDummyFill {
   }
 
   // Picklistの値設定（ドロップダウンから選択可能な値をランダム選択）
-  async setPicklistValue(buttonElement, value) {
+  async setPicklistValue(buttonElement) {
     try {
       // ドロップダウンを展開してオプションを取得
       const options = await this.getPicklistOptions(buttonElement);
@@ -210,12 +211,12 @@ class SalesforceDummyFill {
         return true;
       } else {
         // オプション取得失敗時はフォールバック
-        console.warn('Failed to get picklist options, using fallback');
-        return this.setPicklistValueFallback(buttonElement, value);
+        console.warn('Failed to get picklist options');
+        return false;
       }
     } catch (error) {
-      console.warn(`Picklist selection failed: ${error.message}, using fallback`);
-      return this.setPicklistValueFallback(buttonElement, value);
+      console.warn(`Picklist selection failed: ${error.message}`);
+      return false;
     }
   }
 
@@ -348,38 +349,12 @@ class SalesforceDummyFill {
       // ドロップダウンを再度展開
       await this.expandPicklist(buttonElement);
       
-      // オプション要素をクリック（複数のイベントで試行）
-      const clickEvent = new MouseEvent('click', {
-        bubbles: true,
-        cancelable: true,
-        view: window
-      });
-      
-      const mouseDownEvent = new MouseEvent('mousedown', {
-        bubbles: true,
-        cancelable: true,
-        view: window
-      });
-      
-      const mouseUpEvent = new MouseEvent('mouseup', {
-        bubbles: true,
-        cancelable: true,
-        view: window
-      });
-      
-      // イベントシーケンスを実行
-      selectedOption.element.dispatchEvent(mouseDownEvent);
-      selectedOption.element.dispatchEvent(mouseUpEvent);
-      selectedOption.element.dispatchEvent(clickEvent);
+      // オプション要素をクリック（最小限のイベントで実行）
       selectedOption.element.click();
-      selectedOption.element.focus();
       
-      // Lightningコンポーネント特有のイベントも試行
+      // Lightning Web Component に必要な change イベント
       const changeEvent = new Event('change', { bubbles: true });
-      const inputEvent = new Event('input', { bubbles: true });
-      
       selectedOption.element.dispatchEvent(changeEvent);
-      selectedOption.element.dispatchEvent(inputEvent);
       
       // 少し待機してから状態確認
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -398,21 +373,6 @@ class SalesforceDummyFill {
     }
   }
 
-  // フォールバック用の基本値設定
-  setPicklistValueFallback(buttonElement, value) {
-    try {
-      buttonElement.setAttribute('data-value', value);
-      const truncateElement = buttonElement.querySelector('.slds-truncate');
-      if (truncateElement) {
-        truncateElement.textContent = value;
-      }
-      this.triggerFieldEvents(buttonElement);
-      return true;
-    } catch (error) {
-      console.error('Fallback picklist setting failed:', error);
-      return false;
-    }
-  }
 
   // Lookupの検索トリガー
   triggerLookupSearch(element, value) {
@@ -435,54 +395,6 @@ class SalesforceDummyFill {
     });
   }
 
-  // ピックリストを直接処理（シンプルアプローチ）
-  async fillPicklistsDirectly() {
-    let filledCount = 0;
-    let skippedCount = 0;
-    
-    try {
-      // ページ上の全ピックリストボタンを直接検索
-      const picklistButtons = document.querySelectorAll('button[role="combobox"][aria-haspopup="listbox"]');
-      console.log(`📋 Found ${picklistButtons.length} picklist buttons on page`);
-      
-      for (const button of picklistButtons) {
-        try {
-          // ボタンが無効でないか確認
-          if (button.disabled || button.getAttribute('aria-disabled') === 'true') {
-            console.log(`⏭️ Skipped disabled picklist`);
-            skippedCount++;
-            continue;
-          }
-          
-          // ラベルを取得
-          const label = button.getAttribute('aria-label') || 'Unknown Picklist';
-          console.log(`🎯 Processing picklist: ${label}`);
-          
-          // ピックリスト処理を実行
-          const success = await this.setPicklistValue(button, null);
-          if (success) {
-            filledCount++;
-          } else {
-            skippedCount++;
-          }
-          
-          // 各ピックリスト間で少し待機（UIの安定性のため）
-          await new Promise(resolve => setTimeout(resolve, 200));
-          
-        } catch (error) {
-          console.warn(`Failed to process picklist: ${error.message}`);
-          skippedCount++;
-        }
-      }
-      
-      console.log(`✅ Picklist processing completed: ${filledCount} filled, ${skippedCount} skipped`);
-      return { filledCount, skippedCount };
-      
-    } catch (error) {
-      console.error('Direct picklist processing failed:', error);
-      return { filledCount: 0, skippedCount: 0 };
-    }
-  }
 
   // フォールバック用の基本入力
   async fallbackFill() {
