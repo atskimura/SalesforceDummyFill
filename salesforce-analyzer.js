@@ -174,6 +174,17 @@ class SalesforceAnalyzer {
       }
     }
     
+    // 複合フィールド（名前）の処理
+    if (baseApiName === 'Name') {
+      const dataField = element.closest('[data-field]')?.getAttribute('data-field');
+      if (dataField) {
+        return {
+          apiName: baseApiName,
+          subField: dataField  // 'firstName', 'lastName', 'salutation'
+        };
+      }
+    }
+    
     // 通常のフィールド
     return {
       apiName: baseApiName,
