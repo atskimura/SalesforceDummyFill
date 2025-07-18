@@ -57,7 +57,15 @@ class SalesforceDummyFill {
       
       // 3. フィールドに一括入力
       console.log('📝 Filling fields with generated data...');
-      const fillResult = this.fillAllFields(dummyData, formInfo.fields);
+      const fillResult = await this.fillAllFields(dummyData, formInfo.fields);
+      
+      // 4. ピックリストを直接処理（独立して実行）
+      console.log('🎯 Processing picklists directly...');
+      const picklistResult = await this.fillPicklistsDirectly();
+      
+      // 結果をマージ
+      fillResult.filledFields += picklistResult.filledCount;
+      fillResult.skippedFields += picklistResult.skippedCount;
       
       return {
         success: true,
@@ -74,29 +82,38 @@ class SalesforceDummyFill {
       // OpenAI API失敗時のフォールバック
       if (error.message.includes('OpenAI') || error.message.includes('API')) {
         console.log('🔄 Falling back to basic dummy data...');
-        return this.fallbackFill();
+        return await this.fallbackFill();
       }
       
       throw error;
     }
   }
 
-  // 一括フィールド入力機能（Lightning対応）
-  fillAllFields(dummyData, fields) {
+  // 一括フィールド入力機能（Lightning対応・非同期）
+  async fillAllFields(dummyData, fields) {
     let filledCount = 0;
     let skippedCount = 0;
 
-    fields.forEach(field => {
+    // ピックリストは順次処理、その他は並列処理可能だが、安全のため順次処理
+    for (const field of fields) {
       try {
         // 無効・読み取り専用・既に値があるフィールドはスキップ
         if (field.disabled || (field.value && field.value.trim() !== '')) {
           skippedCount++;
-          return;
+          continue;
         }
 
-        // API名でデータを検索
+        // 値を取得（ピックリストの場合は画面から選択）
         let value = null;
         
+        // ピックリストは直接処理するためスキップ
+        if (field.type === 'picklist') {
+          console.log(`⏭️ Skipped picklist ${field.label || field.apiName} (will be processed directly)`);
+          skippedCount++;
+          continue;
+        }
+        
+        // 通常フィールドの場合は生成されたダミーデータを使用
         // 複合フィールドの場合
         if (field.subField) {
           const compositeKey = `${field.apiName}.${field.subField}`;
@@ -122,7 +139,7 @@ class SalesforceDummyFill {
         }
 
         if (value !== null && value !== undefined) {
-          const success = this.setFieldValue(field, value);
+          const success = await this.setFieldValue(field, value);
           if (success) {
             filledCount++;
             console.log(`✅ Filled ${field.label || field.apiName}: ${value}`);
@@ -138,7 +155,7 @@ class SalesforceDummyFill {
         console.warn(`Failed to fill field ${field.label || field.apiName}:`, error);
         skippedCount++;
       }
-    });
+    }
 
     return { filledCount, skippedCount };
   }
@@ -152,7 +169,7 @@ class SalesforceDummyFill {
   }
 
   // フィールドタイプに応じた値設定
-  setFieldValue(field, value) {
+  async setFieldValue(field, value) {
     const element = field.element;
     
     // Lookupフィールド（参照項目）はスキップ
@@ -164,30 +181,237 @@ class SalesforceDummyFill {
     switch (field.type) {
       case 'checkbox':
         element.checked = Boolean(value);
-        break;
+        this.triggerFieldEvents(element);
+        return true;
         
       case 'picklist':
-        // Picklistの場合は、ボタンをクリックしてオプションを選択
-        this.setPicklistValue(element, value);
-        break;
+        // Picklistの場合は非同期でオプションを選択
+        return await this.setPicklistValue(element, value);
         
       default:
         // 通常のテキスト入力
         element.value = value;
-        break;
+        this.triggerFieldEvents(element);
+        return true;
     }
-
-    // イベントをトリガー（Salesforceのリアクティブ更新用）
-    this.triggerFieldEvents(element);
-    return true; // 成功を示す
   }
 
-  // Picklistの値設定
-  setPicklistValue(buttonElement, value) {
-    // TODO: Picklistの詳細な選択ロジック実装
-    // 現在は data-value 属性に値を設定
-    buttonElement.setAttribute('data-value', value);
-    buttonElement.querySelector('.slds-truncate').textContent = value;
+  // Picklistの値設定（ドロップダウンから選択可能な値をランダム選択）
+  async setPicklistValue(buttonElement, value) {
+    try {
+      // ドロップダウンを展開してオプションを取得
+      const options = await this.getPicklistOptions(buttonElement);
+      
+      if (options && options.length > 0) {
+        // ランダムにオプションを選択
+        const selectedOption = this.selectRandomOption(options);
+        await this.selectPicklistOption(buttonElement, selectedOption);
+        console.log(`✅ Picklist selected: ${selectedOption.text}`);
+        return true;
+      } else {
+        // オプション取得失敗時はフォールバック
+        console.warn('Failed to get picklist options, using fallback');
+        return this.setPicklistValueFallback(buttonElement, value);
+      }
+    } catch (error) {
+      console.warn(`Picklist selection failed: ${error.message}, using fallback`);
+      return this.setPicklistValueFallback(buttonElement, value);
+    }
+  }
+
+  // ドロップダウンからオプションを取得
+  async getPicklistOptions(buttonElement) {
+    try {
+      // 1. ドロップダウンを展開
+      await this.expandPicklist(buttonElement);
+      
+      // 2. オプション要素が生成されるまで待機
+      const dropdownId = buttonElement.getAttribute('aria-controls');
+      if (!dropdownId) {
+        throw new Error('Dropdown ID not found');
+      }
+      
+      const dropdownElement = document.getElementById(dropdownId);
+      if (!dropdownElement) {
+        throw new Error('Dropdown element not found');
+      }
+      
+      // 3. オプション要素を待機して取得
+      const options = await this.waitForPicklistOptions(dropdownElement);
+      
+      // 4. ドロップダウンを閉じる
+      await this.collapsePicklist(buttonElement);
+      
+      return options;
+    } catch (error) {
+      // エラー時はドロップダウンを閉じる
+      await this.collapsePicklist(buttonElement);
+      throw error;
+    }
+  }
+
+  // ドロップダウンを展開
+  async expandPicklist(buttonElement) {
+    // ボタンをクリックしてドロップダウンを展開
+    buttonElement.click();
+    
+    // aria-expanded="true"になるまで待機
+    const maxWait = 3000; // 3秒
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < maxWait) {
+      const expanded = buttonElement.getAttribute('aria-expanded');
+      if (expanded === 'true') {
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    throw new Error('Failed to expand picklist dropdown');
+  }
+
+  // ドロップダウンを閉じる
+  async collapsePicklist(buttonElement) {
+    if (buttonElement.getAttribute('aria-expanded') === 'true') {
+      // ESCキーを送信してドロップダウンを閉じる
+      const escEvent = new KeyboardEvent('keydown', {
+        key: 'Escape',
+        keyCode: 27,
+        which: 27,
+        bubbles: true
+      });
+      buttonElement.dispatchEvent(escEvent);
+      
+      // 閉じるまで少し待機
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+  }
+
+  // オプション要素の生成を待機
+  async waitForPicklistOptions(dropdownElement) {
+    const maxWait = 3000; // 3秒
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < maxWait) {
+      // lightning-base-combobox-item または div[role="option"] を検索
+      const optionElements = dropdownElement.querySelectorAll('lightning-base-combobox-item[role="option"], div[role="option"]');
+      
+      if (optionElements.length > 0) {
+        // オプション情報を抽出
+        const options = Array.from(optionElements).map(option => {
+          // data-value属性から値を取得
+          const dataValue = option.getAttribute('data-value');
+          
+          // テキストを取得（複数のパターンに対応）
+          let text = '';
+          const titleElement = option.querySelector('span[title]');
+          if (titleElement) {
+            text = titleElement.getAttribute('title') || titleElement.textContent.trim();
+          } else {
+            const textElement = option.querySelector('.slds-truncate, .slds-media__body span');
+            text = textElement ? textElement.textContent.trim() : '';
+          }
+          
+          return {
+            element: option,
+            text: text,
+            value: dataValue || text // data-valueを優先、なければtext
+          };
+        }).filter(option => 
+          option.text && 
+          option.text !== '--なし--' && 
+          option.value !== '' // 空の値もスキップ
+        );
+        
+        return options;
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    throw new Error('Picklist options not loaded within timeout');
+  }
+
+  // ランダムオプション選択
+  selectRandomOption(options) {
+    if (!options || options.length === 0) {
+      throw new Error('No options available for selection');
+    }
+    
+    const randomIndex = Math.floor(Math.random() * options.length);
+    return options[randomIndex];
+  }
+
+  // オプションを選択
+  async selectPicklistOption(buttonElement, selectedOption) {
+    try {
+      // ドロップダウンを再度展開
+      await this.expandPicklist(buttonElement);
+      
+      // オプション要素をクリック（複数のイベントで試行）
+      const clickEvent = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        view: window
+      });
+      
+      const mouseDownEvent = new MouseEvent('mousedown', {
+        bubbles: true,
+        cancelable: true,
+        view: window
+      });
+      
+      const mouseUpEvent = new MouseEvent('mouseup', {
+        bubbles: true,
+        cancelable: true,
+        view: window
+      });
+      
+      // イベントシーケンスを実行
+      selectedOption.element.dispatchEvent(mouseDownEvent);
+      selectedOption.element.dispatchEvent(mouseUpEvent);
+      selectedOption.element.dispatchEvent(clickEvent);
+      selectedOption.element.click();
+      selectedOption.element.focus();
+      
+      // Lightningコンポーネント特有のイベントも試行
+      const changeEvent = new Event('change', { bubbles: true });
+      const inputEvent = new Event('input', { bubbles: true });
+      
+      selectedOption.element.dispatchEvent(changeEvent);
+      selectedOption.element.dispatchEvent(inputEvent);
+      
+      // 少し待機してから状態確認
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // 選択が反映されているか確認
+      const displayText = buttonElement.querySelector('.slds-truncate')?.textContent;
+      
+      if (displayText === selectedOption.text) {
+        return true;
+      } else {
+        throw new Error(`Selection failed: expected ${selectedOption.text}, got ${displayText}`);
+      }
+    } catch (error) {
+      await this.collapsePicklist(buttonElement);
+      throw error;
+    }
+  }
+
+  // フォールバック用の基本値設定
+  setPicklistValueFallback(buttonElement, value) {
+    try {
+      buttonElement.setAttribute('data-value', value);
+      const truncateElement = buttonElement.querySelector('.slds-truncate');
+      if (truncateElement) {
+        truncateElement.textContent = value;
+      }
+      this.triggerFieldEvents(buttonElement);
+      return true;
+    } catch (error) {
+      console.error('Fallback picklist setting failed:', error);
+      return false;
+    }
   }
 
   // Lookupの検索トリガー
@@ -211,12 +435,61 @@ class SalesforceDummyFill {
     });
   }
 
+  // ピックリストを直接処理（シンプルアプローチ）
+  async fillPicklistsDirectly() {
+    let filledCount = 0;
+    let skippedCount = 0;
+    
+    try {
+      // ページ上の全ピックリストボタンを直接検索
+      const picklistButtons = document.querySelectorAll('button[role="combobox"][aria-haspopup="listbox"]');
+      console.log(`📋 Found ${picklistButtons.length} picklist buttons on page`);
+      
+      for (const button of picklistButtons) {
+        try {
+          // ボタンが無効でないか確認
+          if (button.disabled || button.getAttribute('aria-disabled') === 'true') {
+            console.log(`⏭️ Skipped disabled picklist`);
+            skippedCount++;
+            continue;
+          }
+          
+          // ラベルを取得
+          const label = button.getAttribute('aria-label') || 'Unknown Picklist';
+          console.log(`🎯 Processing picklist: ${label}`);
+          
+          // ピックリスト処理を実行
+          const success = await this.setPicklistValue(button, null);
+          if (success) {
+            filledCount++;
+          } else {
+            skippedCount++;
+          }
+          
+          // 各ピックリスト間で少し待機（UIの安定性のため）
+          await new Promise(resolve => setTimeout(resolve, 200));
+          
+        } catch (error) {
+          console.warn(`Failed to process picklist: ${error.message}`);
+          skippedCount++;
+        }
+      }
+      
+      console.log(`✅ Picklist processing completed: ${filledCount} filled, ${skippedCount} skipped`);
+      return { filledCount, skippedCount };
+      
+    } catch (error) {
+      console.error('Direct picklist processing failed:', error);
+      return { filledCount: 0, skippedCount: 0 };
+    }
+  }
+
   // フォールバック用の基本入力
-  fallbackFill() {
+  async fallbackFill() {
     try {
       const formInfo = this.analyzeForm();
       const fallbackData = this.openaiHelper.getFallbackData();
-      const fillResult = this.fillAllFields(fallbackData.data, formInfo.fields);
+      const fillResult = await this.fillAllFields(fallbackData.data, formInfo.fields);
       
       return {
         success: true,

@@ -107,7 +107,7 @@ class SalesforceAnalyzer {
     fieldContainers.forEach(container => {
       const selectionName = container.getAttribute('data-target-selection-name');
       
-      // 各コンテナ内で入力要素を検索
+      // 各コンテナ内で入力要素を検索（全要素を処理）
       this.inputSelectors.forEach(inputSelector => {
         const elements = container.querySelectorAll(inputSelector);
         
@@ -126,7 +126,7 @@ class SalesforceAnalyzer {
   // 個別フィールド情報の抽出
   extractFieldInfo(element, container, selectionName) {
     try {
-      const apiNameInfo = this.getFieldApiName(element, container, selectionName);
+      const apiNameInfo = this.getFieldApiName(element, selectionName);
       
       const fieldInfo = {
         type: this.getFieldType(element),
@@ -154,7 +154,7 @@ class SalesforceAnalyzer {
   }
 
   // フィールドのAPI名とサブフィールド名を取得
-  getFieldApiName(element, container, selectionName) {
+  getFieldApiName(element, selectionName) {
     // data-target-selection-nameから基本API名を抽出
     const match = selectionName.match(/sfdc:RecordField\.[^\.]+\.(.+)/);
     if (!match) {
@@ -218,6 +218,8 @@ class SalesforceAnalyzer {
     const type = element.type;
     const role = element.getAttribute('role');
 
+    // ピックリスト判定用（ログなし）
+
     if (tagName === 'input') {
       if (type === 'checkbox') return 'checkbox';
       if (type === 'email') return 'email';
@@ -230,8 +232,11 @@ class SalesforceAnalyzer {
     }
     
     if (tagName === 'textarea') return 'textarea';
-    if (tagName === 'button' && role === 'combobox') return 'picklist';
+    if (tagName === 'button' && role === 'combobox') {
+      return 'picklist';
+    }
     
+    // 不明なフィールドタイプのログは削除（ログが多すぎるため）
     return 'unknown';
   }
 
