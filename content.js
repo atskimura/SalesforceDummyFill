@@ -51,13 +51,17 @@ class SalesforceDummyFill {
         throw new Error('入力可能なフィールドが見つかりませんでした');
       }
 
-      // 2. OpenAI APIでダミーデータを生成
-      console.log('🤖 Generating dummy data with OpenAI...');
-      const dummyData = await this.openaiHelper.generateDummyData(formInfo);
+      // 2. 事前にピックリスト値を取得・選択
+      console.log('🎯 Collecting picklist values...');
+      const picklistValues = await this.collectPicklistValues(formInfo.fields);
       
-      // 3. フィールドに一括入力（ピックリストも含む）
+      // 3. OpenAI APIでダミーデータを生成（ピックリスト値を含む）
+      console.log('🤖 Generating dummy data with OpenAI...');
+      const dummyData = await this.openaiHelper.generateDummyData(formInfo, picklistValues);
+      
+      // 4. フィールドに一括入力（ピックリストは既に選択済み）
       console.log('📝 Filling all fields with generated data...');
-      const fillResult = await this.fillAllFields(dummyData, formInfo.fields);
+      const fillResult = await this.fillAllFields(dummyData, formInfo.fields, picklistValues);
       
       return {
         success: true,
@@ -77,8 +81,38 @@ class SalesforceDummyFill {
     }
   }
 
+  // 事前にピックリスト値を取得・選択
+  async collectPicklistValues(fields) {
+    const picklistValues = {};
+    
+    for (const field of fields) {
+      if (field.type === 'picklist') {
+        try {
+          const fieldKey = field.subField 
+            ? `${field.apiName}.${field.subField}`
+            : field.apiName;
+          
+          console.log(`🎯 Getting picklist options for ${field.label || field.apiName}`);
+          const options = await this.getPicklistOptions(field.element);
+          
+          if (options && options.length > 0) {
+            const selectedOption = this.selectRandomOption(options);
+            picklistValues[fieldKey] = selectedOption.text;
+            console.log(`✅ Pre-selected ${fieldKey}: ${selectedOption.text}`);
+          } else {
+            console.warn(`⚠️ No options found for ${field.label || field.apiName}`);
+          }
+        } catch (error) {
+          console.warn(`Failed to get picklist options for ${field.label || field.apiName}:`, error);
+        }
+      }
+    }
+    
+    return picklistValues;
+  }
+
   // 一括フィールド入力機能（Lightning対応・非同期）
-  async fillAllFields(dummyData, fields) {
+  async fillAllFields(dummyData, fields, picklistValues = {}) {
     let filledCount = 0;
     let skippedCount = 0;
 
@@ -98,13 +132,22 @@ class SalesforceDummyFill {
         // 値を取得（ピックリストの場合は画面から選択）
         let value = null;
         
-        // ピックリストの場合は画面から選択可能な値をランダム選択
+        // ピックリストの場合は事前に選択済みの値を設定
         if (field.type === 'picklist') {
-          console.log(`🎯 Processing picklist: ${field.label || field.apiName}`);
-          const success = await this.setPicklistValue(field.element);
-          if (success) {
-            filledCount++;
+          const fieldKey = field.subField 
+            ? `${field.apiName}.${field.subField}`
+            : field.apiName;
+          
+          if (picklistValues[fieldKey]) {
+            console.log(`🎯 Setting pre-selected picklist ${field.label || field.apiName}: ${picklistValues[fieldKey]}`);
+            const success = await this.setPicklistValueByText(field.element, picklistValues[fieldKey]);
+            if (success) {
+              filledCount++;
+            } else {
+              skippedCount++;
+            }
           } else {
+            console.log(`⏭️ Skipped picklist ${field.label || field.apiName}: No pre-selected value`);
             skippedCount++;
           }
           continue;
@@ -190,6 +233,34 @@ class SalesforceDummyFill {
         element.value = value;
         this.triggerFieldEvents(element);
         return true;
+    }
+  }
+
+  // Picklistの値設定（テキストで指定）
+  async setPicklistValueByText(buttonElement, targetText) {
+    try {
+      // ドロップダウンを展開してオプションを取得
+      const options = await this.getPicklistOptions(buttonElement);
+      
+      if (options && options.length > 0) {
+        // 指定されたテキストに一致するオプションを検索
+        const targetOption = options.find(option => option.text === targetText);
+        
+        if (targetOption) {
+          await this.selectPicklistOption(buttonElement, targetOption);
+          console.log(`✅ Picklist set to: ${targetOption.text}`);
+          return true;
+        } else {
+          console.warn(`Target text "${targetText}" not found in picklist options`);
+          return false;
+        }
+      } else {
+        console.warn('Failed to get picklist options');
+        return false;
+      }
+    } catch (error) {
+      console.warn(`Picklist selection failed: ${error.message}`);
+      return false;
     }
   }
 

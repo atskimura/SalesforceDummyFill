@@ -42,7 +42,7 @@ class OpenAIHelper {
   }
 
   // フィールド情報からダミーデータを生成
-  async generateDummyData(formInfo) {
+  async generateDummyData(formInfo, picklistValues = {}) {
     if (!this.apiKey) {
       await this.loadApiKey();
     }
@@ -51,7 +51,7 @@ class OpenAIHelper {
       throw new Error('OpenAI APIキーが設定されていません');
     }
 
-    const prompt = this.buildPrompt(formInfo);
+    const prompt = this.buildPrompt(formInfo, picklistValues);
 
     try {
       const response = await fetch(`${this.baseURL}/chat/completions`, {
@@ -98,7 +98,7 @@ class OpenAIHelper {
   }
 
   // プロンプト生成
-  buildPrompt(formInfo) {
+  buildPrompt(formInfo, picklistValues = {}) {
     const { objectName, fields } = formInfo;
     
     const fieldList = fields.map(field => {
@@ -114,12 +114,23 @@ class OpenAIHelper {
     const randomSeed = Date.now() % 1000;
     const requestId = Math.random().toString(36).substring(2, 8);
 
-    return `
+    let prompt = `
 Salesforceの${objectName}オブジェクトのフォームに入力するダミーデータを生成してください。
 リクエストID: ${requestId} (${randomSeed})
 
 フィールド情報:
-${fieldList}
+${fieldList}`;
+
+    // 選択済みピックリスト値がある場合は追加
+    if (Object.keys(picklistValues).length > 0) {
+      prompt += `\n\n**選択済みピックリスト値**:\n`;
+      for (const [key, value] of Object.entries(picklistValues)) {
+        prompt += `- ${key}: ${value}\n`;
+      }
+      prompt += `\n上記の選択済みピックリスト値と整合性のあるデータを生成してください。`;
+    }
+
+    prompt += `
 
 **創造性重視**: 毎回全く異なるリアルなダミーデータを生成してください。固定パターンは使わず、AIの創造性を最大限活用:
 
@@ -161,7 +172,9 @@ ${fieldList}
   "ShippingAddress.country": "値4",
   ...
 }
-`.trim();
+`;
+
+    return prompt.trim();
   }
 
 }
