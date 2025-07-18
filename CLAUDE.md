@@ -39,22 +39,22 @@ openai-helper.js      # OpenAI API統合
 
 #### `content.js` - メインオーケストレーター
 - `SalesforceDummyFill`クラス：全体の処理フローを管理
-- フォーム解析 → OpenAI API呼び出し → 統一フィールド入力の一連の処理
-- ピックリストのランダム選択機能（画面上の選択可能な値から選択）
-- フォールバック機能（API失敗時の基本ダミーデータ）
+- 統一された単一パス処理：フォーム解析 → ピックリスト事前選択 → OpenAI API呼び出し → 一括フィールド入力
+- ピックリスト整合性機能：事前に選択した値をOpenAI プロンプトに含めてデータ一貫性を確保
 - メッセージパッシング（popup.js との通信）
 
 #### `salesforce-analyzer.js` - フォーム解析エンジン
 - `SalesforceAnalyzer`クラス：Lightning Web Componentの複雑な構造を解析
 - `data-target-selection-name` 属性ベースの堅牢なフィールド検出
-- 11種類のフィールドタイプをサポート（テキスト、数値、チェックボックス、ピックリスト、住所、ルックアップ等）
-- 複合フィールド（住所）の個別コンポーネント処理
+- 12種類のフィールドタイプをサポート（テキスト、数値、チェックボックス、ピックリスト、住所、名前、ルックアップ等）
+- 複合フィールド処理：住所（BillingAddress、ShippingAddress）と名前（Name）の個別コンポーネント対応
 
 #### `openai-helper.js` - AI統合
 - `OpenAIHelper`クラス：GPT-4o-miniを使用したコンテキスト認識ダミーデータ生成
-- 日本語ビジネスデータの生成
-- フラットなJSON構造での応答パース
-- API制限・エラーハンドリング
+- ピックリスト値統合：事前選択されたピックリスト値を考慮した一貫性のあるデータ生成
+- 多様性重視の日本語ビジネスデータ生成（頻出姓を避ける、固定フォーマット対応）
+- フラットなJSON構造での応答パース（ネストオブジェクト回避）
+- example.comドメイン使用（メール・ウェブサイト）
 
 ## フィールド検出パターン
 
@@ -67,12 +67,18 @@ openai-helper.js      # OpenAI API統合
 const match = selectionName.match(/sfdc:RecordField\.[^\.]+\.(.+)/);
 ```
 
-### 複合フィールド（住所）の処理
+### 複合フィールドの処理
 ```javascript
-// 住所フィールドの二重識別子方式
+// 住所フィールドの処理
 if (baseApiName.endsWith('Address')) {
   const dataField = element.closest('[data-field]')?.getAttribute('data-field');
   // BillingAddress.country, BillingAddress.postalCode etc.
+}
+
+// 名前フィールドの処理（住所と同じパターン）
+if (baseApiName === 'Name') {
+  const dataField = element.closest('[data-field]')?.getAttribute('data-field');
+  // Name.firstName, Name.lastName, Name.salutation
 }
 ```
 
@@ -80,32 +86,41 @@ if (baseApiName.endsWith('Address')) {
 - **テキスト系**: `input[type="text|email|tel|url|password"]`, `textarea`
 - **数値**: `input[type="number"]`, `input[inputmode="decimal"]`
 - **選択系**: 
-  - `button[role="combobox"]` (picklist) - 画面の選択可能値からランダム選択
+  - `button[role="combobox"]` (picklist) - 事前取得による整合性確保済みランダム選択
   - `input[role="combobox"]` (lookup) - 自動スキップ
 - **チェックボックス**: `input[type="checkbox"]`
-- **複合**: `lightning-input-address` (住所の複数コンポーネント)
+- **複合フィールド**: 
+  - `lightning-input-address` (住所の複数コンポーネント: country, province, city, postalCode, street)
+  - `lightning-input-name` (名前の複数コンポーネント: salutation, firstName, lastName)
 
 ## 開発時の重要事項
 
 ### Lightning Web Component との互換性
-- **統一処理アーキテクチャ**: 全フィールドタイプを単一ループで効率的に処理
-- **ピックリスト処理**: 
+- **統一処理アーキテクチャ**: 全フィールドタイプを単一ループで効率的に処理（fillPicklistsDirectly削除による最適化済み）
+- **ピックリスト整合性処理**: 
+  - 事前選択フェーズ：全ピックリストから選択可能値を取得・ランダム選択
+  - データ生成フェーズ：選択済みピックリスト値をOpenAI プロンプトに含めて一貫性のあるデータを生成
   - 「--なし--」状態を空値として適切に処理
-  - ドロップダウン展開 → オプション取得 → ランダム選択 → イベント発火
   - 最小限のイベント処理（click + change）で Lightning Web Component との互換性確保
 - **イベントトリガー**: `input`, `change`, `blur` イベントをディスパッチしてSalesforceのリアクティブ更新を確保
 - **Lookupフィールド**: 自動的にスキップ（参照項目のため）
-- **住所フィールド**: 個別コンポーネント（国、都道府県、市区町村、郵便番号、住所）として処理
+- **複合フィールド**: 住所（請求先・納入先）と名前（敬称・姓・名）の個別コンポーネント処理
 
 ### OpenAI API プロンプト設計
-- 日本語ビジネスデータ生成に最適化
-- フラットなJSON構造で応答（ネストしたオブジェクトを避ける）
-- フィールドの意味とコンテキストを考慮したデータ生成
+- **ピックリスト値統合**: 事前選択されたピックリスト値を含めて整合性のあるデータを生成
+- **多様性重視**: 佐藤・田中・鈴木などの頻出姓を避け、創造的で多様な日本語ビジネスデータを生成
+- **固定フォーマット対応**: 
+  - 電話番号: 00-0000-0000 固定
+  - 日付: YYYY/MM/DD 形式
+  - メール・URL: example.com ドメイン使用
+- **フラットなJSON構造**: ネストしたオブジェクトを避けて `"BillingAddress.country"` 形式で出力
+- **コンテキスト認識**: フィールドの意味と選択済みピックリスト値を考慮したデータ生成
 
 ### エラーハンドリング
-- OpenAI API失敗時は自動的にフォールバックダミーデータを使用
+- OpenAI API必須（フォールバック機能は削除済み）
 - ユーザーフレンドリーなエラーメッセージ
 - APIキー未設定時の適切な誘導
+- ピックリスト選択失敗時の適切なスキップ処理
 
 ## テスト
 
