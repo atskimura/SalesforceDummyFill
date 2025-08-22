@@ -55,8 +55,6 @@ SalesforceのLightning Web Componentフォームに、OpenAI APIを活用して�
 - [ ] 複数オブジェクト対応の拡張
 
 ## 実装状況
-
-### 2025-06-20
 - ✅ プロジェクト初期化
 - ✅ 開発計画策定
 - ✅ README.md作成
